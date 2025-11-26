@@ -1,6 +1,8 @@
 
 # California Wildfire Analysis – Palisades & Eaton Fires, January 2025
 
+##### Author: Henry Oliver
+
 ## About
 The purpose of this assignment is to utilize **false-color satellite imagery** to investigate the extent of wildfires in California in January 2025. This analysis walks through the steps necessary to display **Landsat 8 satellite imagery** overlaid with estimated perimeters of the **2025 LA County Palisades and Eaton Fires**.
 
