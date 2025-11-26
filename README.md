@@ -8,12 +8,13 @@ The purpose of this assignment is to utilize **false-color satellite imagery** t
 The **Palisades** and **Eaton** fires burned across parts of Los Angeles County, leaving visible scars on the landscape. Using Landsat satellite imagery, we can highlight burned areas, compare pre- and post-fire conditions, and better understand the extent and distribution of damage. **Remote sensing** provides an objective, large-scale view that complements on-the-ground assessments and supports recovery planning and ecological monitoring.
 
 ## Repository Structure
+```
 .
 ├── hwk4-task2-false-color-oliver.ipynb      # Jupyter Notebook with analysis workflow
 ├── .gitignore          # Git ignore file
 ├── README.md           # Project overview and instructions
 └── data/               # Folder to store datasets (currently empty)
-
+```
 
 - **analysis.ipynb**: Contains all code and visualizations for the Landsat imagery and fire perimeter overlay analysis.  
 - **data/**: Should be populated with the datasets referenced below before running the notebook.  
