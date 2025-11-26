@@ -32,3 +32,10 @@ The **Palisades** and **Eaton** fires burned across parts of Los Angeles County,
 ## Notes
 - Before running the notebook, download the data from the links above and place them in the `data/` folder.  
 - The analysis produces a **false-color map** showing burned areas (red) and the outlined fire perimeters, providing a visual assessment of fire impact.
+
+## References
+County of Los Angeles. (2025). Eaton fire perimeter (Version 2025-02-21) [Shapefile]. Los Angeles County GIS Hub. https://egis-lacounty.hub.arcgis.com/datasets/lacounty::palisades-and-eaton-dissolved-fire-perimeters-2025/explore?layer=0
+
+County of Los Angeles. (2025). Palisades fire perimeter (Version 2025-02-21) [Shapefile]. Los Angeles County GIS Hub. https://egis-lacounty.hub.arcgis.com/datasets/lacounty::palisades-and-eaton-dissolved-fire-perimeters-2025/explore?layer=1&location=34.133066%2C-118.349606%2C9.60
+
+Microsoft Planetary Computer. (2025). Landsat 8 imagery of Los Angeles County (February 23, 2025) [NetCDF]. https://planetarycomputer.microsoft.com/dataset/landsat-c2-l2
