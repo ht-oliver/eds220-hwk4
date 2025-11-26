@@ -1,5 +1,5 @@
 
-# California Wildfire Analysis – Palisades & Eaton Fires, January 2025
+# California Wildfire Analysis – Palisades & Eaton Fires, February 2025
 
 ##### Author: Henry Oliver
 
