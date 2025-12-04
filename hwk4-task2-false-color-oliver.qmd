@@ -1,0 +1,321 @@
+---
+title: 'EDS 220: Data Wrangling with Rasters and False Color Imagery'
+jupyter: python3
+---
+
+###### Author: Henry Oliver
+###### Github Repository: https://github.com/ht-oliver/eds220-hwk4
+
+##### **Purpose**
+ The purpose of this walkthrough to utilize false color satellite imagery to investigate the extent of wildfires in California in January, 2025. This anlaysis will walk through the steps necessary to display Landsay 8 satellite imagery overlayed with estimated perimeters of the 2025 LA County Palisades and Eaton Fires.
+
+##### **Background**
+The Palisades and Eaton fires burned across parts of Los Angeles County, leaving visible scars on the landscape. Using Landsat satellite imagery, we can highlight burn areas, compare pre- and post-fire conditions, and better understand the extent and distribution of damage. Remote sensing provides an objective, large-scale view that complements on-the-ground assessments and helps support recovery planning and ecological monitoring.
+
+##### **Highlights**
+  - Wrangling and displaying `.shp ` and `.nc` file types
+  - Producing True and False color imagery
+  - Creating useful, intuitive, and accurate visualizations
+
+
+### **Part 1: Installing libraries**
+Performing the data download, manipulation, and displays in this analysis requires the installation of several publicly-available software packages.
+
+```{python}
+import os                           # file and path handling
+import pandas as pd                 # tabular data analysis
+import matplotlib.pyplot as plt     # plotting and visualization
+import xarray as xr                 # working with labeled multi-dimensional data (e.g., rasters)
+import rioxarray as rio             # geospatial raster I/O and spatial operations
+import netCDF4                      # reading NetCDF datasets
+import geopandas as gpd             # vector geospatial data (shapefiles, geodataframes)
+import numpy as np                  # numerical operations and arrays
+```
+
+### **Part 2: Fire Perimeter data**
+Shapefiles for the outline of LA County fires are provided by LA County. This step contains a method to download, join, project, and display fire perimeter data. Make sure to carefully read comments for reasoning behind each code chunk.
+
+Below are the data sources for each perimeter shapefile.
+
+##### Eaton Fire
+ - **File Name**: Eaton_Perimeter_20250121.shp
+ - **Source**: https://egis-lacounty.hub.arcgis.com/datasets/
+lacounty::palisades-and-eaton-dissolved-fire-perimeters-2025/explore?layer=0
+ - **Publisher**: County of Los Angeles
+ - **Date**: February 26, 2025
+
+##### Palisades Fire
+ - **File Name**: Palisades_Perimeter_20250121.shp
+ - **Source**: https://egis-lacounty.hub.arcgis.com/datasets/lacounty::palisades-and-eaton-dissolved-fire-perimeters-2025/explore?layer=1&location=34.133066%2C-118.349606%2C9.60
+ - **Publisher**: County of Los Angeles
+ - **Date**: February 26, 2025
+
+```{python}
+# Download Eaton shapefile
+eaton = gpd.read_file(os.path.join('data',
+                                   'Eaton_Perimeter_20250121',
+                                   'Eaton_Perimeter_20250121.shp'))
+
+# Download Palisades shapefile
+palisades = gpd.read_file(os.path.join('data',
+                                   'Palisades_Perimeter_20250121',
+                                   'Palisades_Perimeter_20250121.shp'))
+```
+
+
+### **Part 2) Fire Perimeter Data Exploration**
+Let's get a bit more familiar with our fire perimeter data. Eventually, we will want to join these two files into a single layer and plot them in combination with raster data for our final visualization. In order to do so we must first confirm that our shapefiles have the data we want to visualize, and are compatible with eachother.
+
+First, let's check what our data frame looks like using the `head()` method, and check the data type of our Eaton shapefile using the `type()` function.
+
+```{python}
+# Check data type of `eaton`
+print(f"Eaton shapefile data type is: {type(eaton)}")
+# Visualize data frame
+eaton.head()
+```
+
+Now let's do the same thing for our Palisade shapefile
+
+```{python}
+# Check data type of `palisades`
+print(f"Palisade shapefile data type is: {type(palisades)}")
+# Visualize data frame
+palisades.head()
+```
+
+#### What did we learn?
+The `type()` method showed us that both `palisades` and `eaton` are classified as `geopandas.geodatafame.GeoDataFrame`. This tells us that {WHAT IS A GEODATAFRAME}
+
+The `head()` method shows us the first 5 rows in our geodataframe. This shows us that our shapefile is comprised of multiple polygons.
+
+#### CRS and Projection
+Next, we want to confirm that we'll be able to use these shapefiles in the same plot. In order to do so, our Geodataframes must share a Coordinate Reference System (CRS). A CRS defines how spatial data like shapefiles and rasters are projected onto the Earth’s surface, ensuring that their locations align correctly when plotted with GIS systems. We will check our CRS with the `.crs` attribute. Then we'll check if the CRS is projected or geographic. A projected CRS flattens the curved surface of the Earth onto a 2D map using a specific mathematical projection, while a geographic CRS describes locations directly with latitude and longitude on a spherical or ellipsoidal Earth.
+
+```{python}
+# Check CRS
+print(f"Eaton CRS is: {eaton.crs}")
+print(f"Palisades CRS is: {palisades.crs}")
+assert eaton.crs == palisades.crs # Returns error if CRS don't match
+
+# Check if projected
+print(f"Eaton CRS is projected. {eaton.crs.is_projected}")
+print(f"Palisades CRS is projected. {palisades.crs.is_projected}")
+assert (eaton.crs.is_projected and palisades.crs.is_projected) == True # Returns error if not projected
+```
+
+Now lets take a look at our plots, separately, using the `.plot()` method
+
+```{python}
+# Preliminary plots
+eaton.plot()
+palisades.plot()
+```
+
+**#### What did we learn?**
+Our CRS is EPSG:3857 and is projected, which means is better suited for measurements and plotting on a 2D map.
+
+Now that we know our CRSs match, we can combine our fires into a single file.
+
+```{python}
+# Combine eaton and palisades shapefiles
+fires = gpd.GeoDataFrame(pd.concat([eaton, palisades]))
+
+# Confirm successful combination by plotting
+fires.plot()
+```
+
+### **Part 3: NetCDF data import and exploration**
+Next, we want to plot these perimeters on top of a raster showing false-color imagery. In order to do that, we'll need to make some slight modifications to our landsat data. Our Landsat 8 data is in NetCDF format (.nc), as opposed to our fire perimeters which were shapefiles (.shp). We'll have to take specific steps to read it in correctly and specify our CRS.
+
+Below is the data source for Landsat 8 imagery
+##### **Landsat 8 Imagery of LA County**
+ - **File Name**: 'landsat8-2025-02-23-palisades-eaton.nc'
+ - **Source**: https://planetarycomputer.microsoft.com/dataset/landsat-c2-l2
+ - **Publisher**: Microsoft Planetary Computer
+ - **Date**: February 26, 2025
+
+
+ To read in our data we will first create filepath, then use a tool from the `xarray` package, `xr.open_dataset` to read it.
+
+```{python}
+# Create filepath
+path = ('data/landsat8-2025-02-23-palisades-eaton.nc')
+
+# Read in landsat netCDF4 data package with xarray
+landsat = xr.open_dataset(path)
+```
+
+Next, we'll find out what kind of data we're working with with the same `type()` method from before, and calling our data. Then we'll check if a CRS is assigned using the `.rio.crs` attribute.
+
+```{python}
+# Print data type
+print(f"landsat data type is: {type(landsat)}")
+
+# Call data to view bands, dimensions & coordinates
+landsat
+
+# Once the data is displayed below, click the page icon on the x or y coordinate to view the CRS and resolution
+# Now let's check if this CRS is assigned
+# Print CRS of landsat data
+print(landsat.rio.crs)
+```
+
+#### **What did we learn?**
+
+We found our that our landsat data is a `xarray` dataset, which is a essentially a multi-dimensional set of arrays. By printing `landsat` we were able to access the number of bands, the dimensions, and the CRS for x and y coordinate. We're also able to tell that this data has 5 spectral bands including: red, green, nir08, and swir22.
+
+**Click the page icon by the x coordinate on this list to view attributes for the coordinate system. This should tell us the CRS.**
+
+ The CRS for the x and y coordinates is EPSG:32611, and it is projected.  Finally also able to see that the units of the CRS are meters, and the resolution is 30x30 meters. Unfortunately, our CRS is not assigned, we just know that our coordinates use EPSG:32611. Next, we'll need to assign a CRS to our `landsat` object.
+
+### Part 4: Restoring geospatial information
+
+Right now, our Landsat ratio does not have an assigned CRS, though it does have a reference CRS. We need to fix that so our data can be displayed with our fire perimeters. We'll assign our refernece CRS using the `.rio.write_crs()` method.
+
+```{python}
+# Write CRS to WGS 84 / UTM zone 11N or 'EPSG:32611'
+# inplace=True overwrites our landsat object to assign CRS
+landsat.rio.write_crs(["EPSG", "32611"], inplace=True)
+
+# Print to confirm it worked. This should return 'EPSG:32611'
+print(landsat.rio.crs)
+```
+
+### Part 5: True color image
+
+Our `landsat` data contains 6 raster layers with information. Eventually we want to view a 'False Color' Image of fire location, but first we'll take a look at the 'True Color' image. True Color images display the 'red', 'blue' and 'green' light as detected by the satellite, which is similar to the way the image would be interpreted by our eyes. In order to display this information, we'll have to specify which pieces of the data we want to plot, and how we want to plot it. This won't work on the first try, but following the instructions a-d below will help the process make sense. There will be a brief discussion after step d.
+
+a) **Without creating any new variables:**
+ - select the red, green and blue variables (in that order) of the `xarray.Dataset` holding the Landsat data,
+ - convert it to a `numpy.array` using the `to_array()` method, and then
+ - use `.plot.imshow()` to create an RGB image with the data. There will be two warnings, that's
+
+```{python}
+# Attempt to print true color image
+landsat[['red', 'green', 'blue']].to_array().plot.imshow()
+```
+
+
+ **b) Adjust the scale used for plotting the bands to get a true color image. HINT: Check the robust parameter. The issue here is the clouds: their RGB values are outliers and cause the other values to be squished when plotting.**
+
+```{python}
+# Print true color image 
+landsat[['red', 'green', 'blue']].to_array().plot.imshow(robust=True)
+```
+
+**c) To resolve the other warning, identify which bands have `nan` values. HINT: There are many ways of doing so. ne option is to use the `numpy.isnan()`.**
+
+```{python}
+# Access bands with NA values
+np.isnan(landsat)
+```
+
+**d) use `.fillna()` method for `xarray.Dataset` to substitute the any `nan` values in the Landsat data for zero**
+
+```{python}
+# Fill na landsat values with 0
+landsat.fillna(0)
+```
+
+**e) Create a new true color image that gets plotted without warnings**
+
+```{python}
+landsat[['red', 'green', 'blue']].to_array().plot.imshow(robust=True)
+```
+
+Why weren't we getting an image at the beginning? What changed to give us our True Color image?
+
+The output in part a) showed a blank plot, which was not displaying any of the bands that we had selected. This is because once the minimum, maximum and NA data for each band were not specified, and as a result the bands could not be printed. Consequently, only the x & y data was plotted. In part e) our plot shows a realistic true color image without warnings. This is because by adding the `robust = True` argument to my `im.show()` method, the vmin and vmax values for each band are specified, which allows the bands to be displayed accurately. Also, by turning the NA values to 0, we can eliminate the warning about NA values, without comprimising our image.
+
+### **Step 6: False color image**
+
+'False color' images display short-wave infrared, near-infrared, and red light as detected by the satellite. While these images are less accurate to our visual interpretation of a landscape, they help highlight certain difficult-to-see characteristics of a landscape.
+
+**a) Without creating any new variables, create a false color image by plotting the short-wave infrared (swir22), near-infrared, and red variables (in that order)**
+
+```{python}
+# Display false color image
+landsat[['swir22', 'nir08', 'red']].to_array().plot.imshow(robust=True)
+```
+
+### Step 7: Map
+Now we can put it all together, and plot our fire perimeters shapefile on top of our false color imagery. In order to do so, we'll need to make sure that our imagery and perimeters share a CRS. We'll assign our `fires` dataset to our `landsat` CRS using the `to_crs()` function.
+
+```{python}
+# Make sure our fires and imagery have the same CRS
+fires = fires.to_crs(landsat.rio.crs)
+assert(fires.crs == landsat.rio.crs)
+```
+
+#### **Plot!**
+
+Now we can plot our data. We'll start by setting up our plot and axes, then we'll plot our data in layers. First, we'll plot our false color imagery using our method from above. Then we'll plot our fire perimeter. Finally, we'll add data labels, captions and image credits. There are lots of small specifications we'll need to make for our map to show up in a cisually pleasing a useful way. Read comments for more details on unfamiliar syntax.
+
+```{python}
+# Create plot
+fig, ax = plt.subplots(1, 1, figsize=(14, 8))
+
+# Plot LANDSAT false color imagery
+landsat[['swir22', 'nir08', 'red']].to_array().plot.imshow( # Select false color bands
+    robust=True,
+    ax=ax,
+    add_colorbar = False,
+    zorder = 0) # Specify this is the borrom layer of our plot
+# Add title
+ax.set_title("False Color Image of LA County with Fire Perimeters - February 23, 2025")
+
+# Plot fire perimeters
+fires.plot(
+    ax=ax,
+    edgecolor='black', # Specify border color of fire perimeters
+    facecolor= "none", # Specify fill color of perimeters
+    linewidth=2, # Specify border thicness
+    alpha= 1,
+    zorder=1 # Specify plot to be on TOP of satellite imagery
+)
+# Remove map axis
+ax.axis('off')
+
+# Add Map data labels
+plt.figtext(x=.63, y=.65, s="Eaton Fire Boundary", weight='bold',
+            bbox = {'facecolor': 'white', #Add text border
+                    'pad':5})
+plt.figtext(x=.2,  y=.51, s="Palisades Fire Boundary", weight='bold',
+            bbox = {'facecolor': 'white', #Add text border
+                    'pad':5})
+
+# Add Data Citation
+fig.text(
+    0.01, 0.01, 
+    "Data Sources: Landsat 8 (USGS), Fire Perimeters (County of Los Angeles)", 
+    fontsize=10,
+    ha='left', 
+    va='bottom',
+    style = 'italic'
+)
+
+# Add Timestamp
+fig.text(
+    1, 0.01, 
+    "Image Taken 2025-02-23 18:28:13 UTC", 
+    fontsize=10,
+    ha='right', 
+    va='bottom',
+    style = 'italic'
+)
+plt.show()
+```
+
+#### Interpretation:
+
+The figure shows false-color Landsat imagery of Los Angeles County, with the Palisades and Eaton fire perimeters outlined in black. In this image, blue and green light are substituted with reading for short-wave (SWIR) and near-infrared (NIR) light respectively. As a result, healthy vegetation appears in shades of green (healthy vegetation has relatively high reflectence of NIR), bare ground or urban areas appear in gray to brown, and the areas affected by fire stand out in red (low NIR reflections, high SWIR), highlighting burned vegetation. By overlaying the fire perimeters, we can clearly see how the fire boundaries correspond to the affected areas, providing a visual confirmation of the fire extent.
+
+#### References:
+
+County of Los Angeles. (2025). Eaton fire perimeter (Version 2025-02-21) [Shapefile]. Los Angeles County GIS Hub. https://egis-lacounty.hub.arcgis.com/datasets/lacounty::palisades-and-eaton-dissolved-fire-perimeters-2025/explore?layer=0
+
+County of Los Angeles. (2025). Palisades fire perimeter (Version 2025-02-21) [Shapefile]. Los Angeles County GIS Hub. https://egis-lacounty.hub.arcgis.com/datasets/lacounty::palisades-and-eaton-dissolved-fire-perimeters-2025/explore?layer=1&location=34.133066%2C-118.349606%2C9.60
+
+Microsoft Planetary Computer. (2025). Landsat 8 imagery of Los Angeles County (February 23, 2025) [NetCDF]. https://planetarycomputer.microsoft.com/dataset/landsat-c2-l2
+
